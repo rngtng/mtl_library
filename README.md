@@ -1,4 +1,4 @@
-# mtl_library
+# Metal Library - mtl_library
 
 Collection of various mtl (Metal) libs. My attempt to streamline most of the \*.mtl
 files in order to join forces :)
@@ -13,6 +13,23 @@ files in order to join forces :)
 ## Compilation
 
 In order to compile the code, make use of https://github.com/rngtng/mtl_linux / https://github.com/RedoXyde/mtl_linux
+
+### Mac OSX / macOS
+
+Simplest way on macOS is using [homebrew](https://brew.sh/). Find the latest formular here: https://github.com/rngtng/homebrew-mtl_linux with
+
+```
+brew tap rngtng/homebrew-mtl_linux
+brew install mtl_linux
+```
+
+## Test
+
+Once compiler & simulator installed, run the test
+
+```
+make test
+```
 
 ## Documentation
 

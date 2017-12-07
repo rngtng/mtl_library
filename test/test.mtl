@@ -5,10 +5,10 @@ proto main 0;;
 #include "../lib/buffer"
 
 #include "./helper"
+#include "./assertions"
 
 //-------------------- MAIN
 fun main=
-
   let test "strcmp" -> t in
   (
     assert_equalI  0 strcmp "" "";
