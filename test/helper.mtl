@@ -1,3 +1,10 @@
+#include ./lib/echo.mtl
+#include ./lib/system.mtl
+
+fun scenario name=
+  SLecholn "\n##### "::name::": #####"::nil
+;;
+
 fun test name=
   SLecholn "\n"::name::": "::nil
 ;;

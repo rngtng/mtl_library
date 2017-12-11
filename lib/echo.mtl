@@ -21,6 +21,7 @@ fun ILecholn list=
   Secholn ""
 ;;
 
+// echo a tuple list as string
 fun TLecho tlist=
   Secho TLtoS tlist
 ;;

@@ -5,6 +5,7 @@ fun listlen list=
     1 + listlen tl list
 ;;
 
+// TODO rename to LtoS
 fun listtostr list=
   let strnew listlen list -> s in
   let 0 -> i in
@@ -16,4 +17,19 @@ fun listtostr list=
     );
   s
   )
+;;
+
+fun TLtoS tuplelist=
+  if tuplelist == nil then
+    ""
+  else
+    let hd tuplelist -> [a b] in
+    strcatlist (itoa a)::b::(TLtoS tl tuplelist)::nil
+;;
+
+fun rev list1 list2=
+  if list1 == nil then
+    list2
+  else
+    rev tl list1 (hd list1)::list2
 ;;
