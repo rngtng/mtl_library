@@ -30,11 +30,16 @@
 // TAICHI=12;
 //var clock_hours = { 0 3600 7200 10800 14400 18000 21600 25200 28800 32400 36000 39600 43200 46800 50400 54000 57600 61200 64800 68400 72000 75600 79200 82800 86400 };;
 // ntp var begin
-
 //var Years;;
 //var Days;;
 //var LeapYears;;
 //var CurrentYear;;
+
+var conn_count=0;;
+var conn_state=0;;
+var byte;;
+var byte_publish;;
+var byte_subscribe;;
 
 var gg={ 0 31  28  31  30 31  30  31  31  30  31  30  31};;
 var secondi_u;;
@@ -111,6 +116,9 @@ var rss2title;;
 
 var mqtt_will_topic;;
 var mqtt_will_msg;;
+var mqtt_conn_topic;;
+var mqtt_conn_msg;;
+var mqtt_conn_flag;;
 
 
 var mqtt_user;;
@@ -640,16 +648,19 @@ XmppTcpOpen xSession.sDomain XmppServerPort xSession;
  * Rouvre un port TCP pour une session 
  */
 fun XmppTcpReOpen ip port xSession =
-	//Xw strcatlist "BACK FROM DNS SRV! "::ip::":"::(itoa port)::nil;
+Secholn "CC -----";	
+Xw strcatlist "BACK FROM DNS SRV! "::ip::":"::(itoa port)::nil;
 	if ip != nil && port != nil then // Si on a une ip et un port valide, on supprime les anciens et on tente d'ouvrir le port en initialisant le tout
         (
 		if xSession.sGate.pTcpV != nil then                     // On supprime et ferme tout si quelque chose avant existait
                 (
+Secholn "CC azzerasock";
 			closetcp xSession.sGate.pTcpV.xSocket;  // Fermeture du socket
                         set xSession.sGate.pTcpV = nil                  // Suppression de la variable
                 );
 
                 //Xw "Open the tcp Socket";
+Secholn "CC tcpopen";
                 let [xParent:xSession xSocket:nil xHost:ip xPort:port] -> newTcp in
                 (
                         set xSession.sGate.pTcpV = newTcp;
@@ -800,8 +811,30 @@ fun bytetolen mex=
 )	else (strget mex 1)
 ;;	
 
+fun mqtt_crash_fun session t=
+ Secholn "**CRASH PACKET";
+    let strcatlist "\$00\$00\$00\$00"::nil -> dato in
+    (
+      dump dato;	
+      XmppGateSend session dato;
+      0
+    );
+0;;
 
 
+fun mqtt_subscribe_fun session t=
+ Secholn "SUBSCRIBE TO MQTT";
+  let strlen t -> mqtt_topiclen in
+   let (2+2+mqtt_topiclen+1)->packetlen in
+    let strcatlist "\$82"::(ctoa packetlen)::"\$00\$01\$00"::(ctoa mqtt_topiclen)::t::(ctoa byte_subscribe)::nil -> mqttSubscribe in
+    (
+      dump mqttSubscribe;	
+      XmppGateSend session mqttSubscribe;
+      0
+    );
+0;;
+
+/*
 fun mqtt_subscribe_fun session t=
  Secholn "SUBSCRIBE TO MQTT";
   let strlen t -> mqtt_topiclen in
@@ -813,7 +846,8 @@ fun mqtt_subscribe_fun session t=
       0
     );
 0;;
-
+*/
+/*
 fun mqtt_publish_fun session t dato=
  Secholn "PUBLISH TO MQTT";
  let strlen t -> mqtt_topiclen in
@@ -833,11 +867,33 @@ if packetlen>=128 then (
       XmppGateSend session mqttPublish;
       0
     ));
-
-
-
 0;;
+*/
 
+fun mqtt_publish_fun session t dato=
+ Secholn "PUBLISH TO MQTT";
+ //32-11-00-08-2F-63-61-73-61-31-32-33-00-02-71-6F-73-20-31
+ let 0->extra in 
+ let ""->packID in (
+ if byte_publish & 0x06 > 0 then ( // QoS present
+   set extra=2;
+   set packID="\$00\$02" // random?
+   );
+ let strlen t -> mqtt_topiclen in
+  let strlen dato -> datolen in
+   let (extra+2+mqtt_topiclen+datolen)->packetlen1 in
+    let lentobyte packetlen1->packetlen in
+     let ""->mqttPublish in (
+      if packetlen>=128 then (
+       set mqttPublish = strcatlist (ctoa byte_publish)::(ctoa bytelow)::(ctoa bytehigh)::"\$00"::(ctoa mqtt_topiclen)::t::packID::dato::nil
+      ) else (
+       set mqttPublish = strcatlist (ctoa byte_publish)::(ctoa packetlen)::"\$00"::(ctoa mqtt_topiclen)::t::packID::dato::nil
+      );
+      dump mqttPublish;	
+      XmppGateSend session mqttPublish
+     );
+	 nil);
+0;;
 fun toascii s=
  let ""->stmp in (
  for iy=0;iy<(strlen s);iy+2 do let strsub s iy 2-> c in
@@ -1426,6 +1482,8 @@ fun XmppTcpRead t val msg xSession =
 					  set gSleepState = 1;
 					  endSleep;
                                           setTaichi;
+set conn_state=2;
+set conn_count=conn_count+1;
 					  mqtt_subscribe_fun xSession mqtt_topic;
 //test sleep clock
 // to do
@@ -1442,6 +1500,7 @@ fun XmppTcpRead t val msg xSession =
 // ******************************
 
 Secho "b";//BUFFER NOT EMPTY...";
+dump msg;
 //set xSession.sGate.pBuffer="<message from='net.openjabnab.platform@openznab.it/services' to='000e8e2d053f@openznab.it/boot' id='OJaNa-6005'><packet xmlns='violet:packet' format='1.0' ttl='604800'>fwQAAA5////+BAAFAAgACQQO/wsAAAEA/w==</packet></message>";
 // *********
 // * PING
@@ -1455,8 +1514,9 @@ Secho "p";
 // *********
 // * SUBACK
 // *********
-if(!strcmp msg strcatlist MQTT_SUBACK::nil) then (    //"\$90\$03\$00\$01\$01"   
-  Secholn "CC response SUBSCRIBE PACKID 01";
+//if(!strcmp msg strcatlist MQTT_SUBACK::nil) then (    //"\$90\$03\$00\$01\$01"   
+if (strget msg 0 ) == 0x90 then (
+  Secholn "CC - MQTT_SUBACK";
   dump xSession.sGate.pBuffer;
   set xSession.sGate.pBuffer = nil;
   set xSession.sGate.pStatus =pInStream;//******************
@@ -1464,8 +1524,10 @@ if(!strcmp msg strcatlist MQTT_SUBACK::nil) then (    //"\$90\$03\$00\$01\$01"
 // *********
 // * PUBACK
 // *********
-if(!strcmp msg strcatlist MQTT_PUBACK::nil) then ( //"\$40\$02\$00\$00"      
-  Secholn "CC response PUBLISH PACKID 00";
+//if(!strcmp msg strcatlist MQTT_PUBACK::nil) then ( //"\$40\$02\$00\$00"      
+if (strget msg 0 ) == 0x40 then (
+
+  Secholn "CC - MQTT_PUBACK";
   dump xSession.sGate.pBuffer;
   set xSession.sGate.pBuffer = nil;
   set xSession.sGate.pStatus =pInStream;//******************
@@ -1473,7 +1535,7 @@ if(!strcmp msg strcatlist MQTT_PUBACK::nil) then ( //"\$40\$02\$00\$00"
 // *********
 // * PUBLISH for me!
 // *********
-let strget msg 0 -> tipo_header in ( 
+let (strget msg 0 ) & 0xf0 -> tipo_header in ( 
  if (tipo_header==MQTT_TYPE_PUBLISH) then //(       
 //  let strget msg 1 -> lenMsg in 
 
@@ -1508,9 +1570,12 @@ TEST
 */
 if !strcmp (strsub cmd_msg 0 5) "DEBUG" then (
   Secholn "DEBUG";
-  let strcatlist "alarm="::(itoa alarm_time)::" timebase="::(itoa time_base)::" sleep="::(itoa sleep_time)::" wakeup="::(itoa wakeup_time)::" daylife="::(itoa day_life)::nil -> dato in
+  let strcatlist "conn_count="::(itoa conn_count)::" conn_state="::(itoa conn_state)::" alarm="::(itoa alarm_time)::" timebase="::(itoa time_base)::" sleep="::(itoa sleep_time)::" wakeup="::(itoa wakeup_time)::" daylife="::(itoa day_life)::nil -> dato in
 		   mqtt_publish_fun XmppGlobalSession mqtt_topic_out dato );
-
+if !strcmp (strsub cmd_msg 0 5) "CRASH" then (
+  Secholn "CRASH";
+  let strcatlist "CRASH"::nil -> dato in
+		   mqtt_crash_fun XmppGlobalSession dato );
 
 		if !strcmp (strsub cmd_msg 0 10) "RSS1TITLE=" then (
 		 Secholn "TYPE RSS1TITLE=";
@@ -1618,6 +1683,12 @@ if !strcmp (strsub cmd_msg 0 5) "DEBUG" then (
 		 set xSession.sGate.pBuffer =	 strcatlist "<message from='net.openjabnab.platform@openznab.it/services' to='000e8e2d053f@openznab.it/boot' id='OJaNa-6005'><packet xmlns='violet:packet' format='1.0' ttl='604800'>"::str64::"</packet></message>"::nil;
 		 set nudda=0);
 //		0);
+		if !strcmp (strsub cmd_msg 0 7) "REBOOT;" then (  
+		 Secholn "TYPE REBOOT;";
+		 let StoB64 (toascii "7f09000000ff" ) ->str64 in
+		 set xSession.sGate.pBuffer =	 strcatlist "<message from='net.openjabnab.platform@openznab.it/services' to='000e8e2d053f@openznab.it/boot' id='OJaNa-6005'><packet xmlns='violet:packet' format='1.0' ttl='604800'>"::str64::"</packet></message>"::nil;
+		 set nudda=0);
+
 		if !strcmp (strsub cmd_msg 0 7) "WAKEUP;" then (  
 		 Secholn "TYPE WAKEUP;";
 		 let StoB64 (toascii "7f0b00000100ff" ) ->str64 in
@@ -1759,6 +1830,41 @@ Secho "P";
 fun XmppTcpOpenStream xSession =
 	set xSession.sGate.pActualMode = 1; //TCP
 	set xSession.sGate.pStatus = pOpening;	// changement d'etat de la connexion
+
+set conn_state=1;
+
+
+Secholn "CONNECT TO MQTT PROVA";
+
+let ""->dato in
+let 10->packetlen in (
+
+set packetlen = packetlen + 2 + strlen mqtt_clientID;
+set dato= strcatlist "\$00"::(ctoa strlen mqtt_clientID)::mqtt_clientID::nil;
+//if byte will
+if byte & 0x04 then (
+set packetlen = packetlen + 2 + strlen mqtt_will_topic ;
+set packetlen = packetlen + 2 + strlen mqtt_will_msg ;
+set dato= strcatlist dato::"\$00"::(ctoa strlen mqtt_will_topic)::mqtt_will_topic::"\$00"::(ctoa strlen mqtt_will_msg)::mqtt_will_msg::nil
+);
+//if user
+if byte & 0x80 then (
+set packetlen = packetlen + 2 + strlen mqtt_user;
+set dato= strcatlist dato::"\$00"::(ctoa strlen mqtt_user)::mqtt_user::nil
+);
+//if pwd
+if byte & 0x40 then (
+set packetlen = packetlen + 2 + strlen mqtt_password;
+set dato= strcatlist dato::"\$00"::(ctoa strlen mqtt_password)::mqtt_password::nil
+);
+set dato= strcatlist "\$10"::(ctoa packetlen)::"\$00\$04"::"MQTT"::"\$04"::(ctoa byte)::"\$00\$3C"::dato::nil; 
+
+Secholn "-";
+dump dato;
+XmppGateSend xSession dato
+);
+
+
 /*
 // ******************************************
 // * MQTT CONNECT CC
@@ -1795,6 +1901,7 @@ fun XmppTcpOpenStream xSession =
 // ******************************************
 // * MQTT CONNECT CC
 // ******************************************
+/*buona
 	Secholn "CONNECT TO MQTT";
 let strlen mqtt_will_topic -> mqtt_will_topic_len in
 let strlen mqtt_will_msg -> mqtt_will_msg_len in
@@ -1845,6 +1952,8 @@ if mqtt_will_topic_len>0 then (
 
 	  0);
 	0);
+*/
+
 0;;
 
 /*
@@ -2252,14 +2361,17 @@ fun XmppGateReconnect xSession displayLeds =
 			set xSession.sGate.pActualMode = 2 // Mode BOSH 
 		)
 	); 
-	//Xw strcatlist "TRY TOO LONG... TRY("::(itoa xSession.sGate.pTry)::") ON NEXT SERVER"::nil;
+	Xw strcatlist "TRY TOO LONG... TRY("::(itoa xSession.sGate.pTry)::") ON NEXT SERVER"::nil;
 	set xSession.sGate.pTry = xSession.sGate.pTry - 1;		// on met à jour le nombre d'essais
 	set xSession.sLastIOTime = time;					// on met à jour la derniere action
 	if xSession.sGate.pTry >= 0 then					// on continue de tester sur en tcp sur le 5222
 	(
+Xw "CC ptry";
+//Iecholn xSession.sGate.pActualMode;
 		if xSession.sGate.pActualMode == 1 then (	
 			set xSession.sGate.pStatus = pOpening;
-			DnsSrvCb nil fixarg3 #XmppTcpReOpen xSession	// on appel le callback DNS qui contient les autres serveurs à tester
+		//cc	DnsSrvCb nil fixarg3 #XmppTcpReOpen xSession	// on appel le callback DNS qui contient les autres serveurs à tester
+dnsreq xSession.sDomain fixarg2 fixarg3 #XmppTcpReOpen xSession XmppServerPort   
 		)
 		else (
 			set xSession.sGate.pStatus = pOpening;
@@ -2268,7 +2380,7 @@ fun XmppGateReconnect xSession displayLeds =
 		0
 	)else(	// on passe en BOSH ou en TCP suivant le mode duquel en vient!
 		if xSession.sGate.pActualMode == 1 then (	
-			//Xw "Now we try in BOSH";
+			Xw "Now we try in BOSH";
 			set xSession.sGate.pActualMode = 2;
 			set xSession.sGate.pTry = 1;
 			set xSession.sGate.pTcpV = nil;		// On supprime le tcp
@@ -2280,7 +2392,7 @@ fun XmppGateReconnect xSession displayLeds =
 			set xSession.sLastIOTime = time;          // Mise à jour
 			0
 		)else(
-			//Xw "Now we try in TCP";
+			Xw "Now we try in TCP";
 			set xSession.sGate.pActualMode = 1;	
 			set xSession.sGate.pTry = 3; // on remet le nombre d'essais à faire en TCP à 3	
 			set xSession.sGate.pMode = pTcp;
@@ -2402,10 +2514,10 @@ fun XmppGateStreamClosed xSession Mode =
 	// la connection a déconné. On pourrait essayer de gentiment relancer la connection, mais le plus efficace est de simplement rebooter le bunny.
 	Secholn "CC retry";
 
-let [pParent:xSession pMode:pTcp pStatus:pOpening pTry:3 pTcpV:nil pBoshV:nil pActualMode:nil] -> newGate in	// On crée la structure XmppGate
+//let [pParent:xSession pMode:pTcp pStatus:pOpening pTry:3 pTcpV:nil pBoshV:nil pActualMode:nil] -> newGate in	// On crée la structure XmppGate
 //  set xSession.sGate = newGate;	
-	set xSession.sGate = nil;
-    	XmppGateConnect xSession;  
+//	set xSession.sGate = nil;
+    	XmppGateReconnect xSession 0;  
 0;;
 /*	Xw "gate stream closed, rebooting";
 	reboot 0x0407FE58 0x13fb6754
@@ -2438,6 +2550,10 @@ fun XmppGateSend xSession xData =
 	Called by XmppSessionIdle (which is called at the end of each "loop" turn) if the xmpp session is "up & running"
 */
 fun XmppGateIdle xSession=
+
+
+
+
 //Secholn "CC XMPPGATEIDLE";
     
 //if (!strcmp clock "1") then (
@@ -2461,6 +2577,31 @@ if asp2>0 then
 
 if asp3>0 then 
   set asp3 = asp3 -1;
+
+if asp2==30 then 
+        mqtt_publish_fun XmppGlobalSession mqtt_topic "SLEEP;";
+
+ 
+if conn_state == 2 then ( // fase dopo il connack
+set conn_state=0;
+Secholn "ONLINE";
+if mqtt_conn_flag==1 then
+// let strcatlist "online"::nil -> dato in
+   mqtt_publish_fun XmppGlobalSession mqtt_conn_topic mqtt_conn_msg ;
+
+// test se in orario di sonno
+  if(wakeup_time!=nil) && (sleep_time!=nil) then
+    let (time_base + time) - day_life -> z in
+     if z>=sleep_time || z<wakeup_time then
+      if asp2==nil || asp2==0 then 
+        set asp2=60;
+//        mqtt_publish_fun XmppGlobalSession mqtt_topic "SLEEP;");
+ 
+nil);
+
+
+
+
 
 //alarm!!
   if (!strcmp alarm "1") && (gSleepState == 0) then (
@@ -4817,6 +4958,8 @@ fun _configcbhttp http res=
 set mqtt_will_topic=listswitchstr conf "mqtt_will_topic";
 set mqtt_will_msg=listswitchstr conf "mqtt_will_msg";
 
+set mqtt_conn_topic=listswitchstr conf "mqtt_conn_topic";
+set mqtt_conn_msg=listswitchstr conf "mqtt_conn_msg";
 
 			//
 			/*set rfid1=listswitchstr conf "rfid1";
@@ -4856,13 +4999,83 @@ for i=0;i<tablen monthname do
 //                        set beepbeep=listswitchstr conf "beep";
 			set clock=listswitchstr conf "clock";
 			set alarm=listswitchstr conf "alarm";
-/*
+
 set parameters=listswitchstr conf "parameters";
+if parameters==nil then
+  set parameters="110001-000-0-0";
+/*
 set clock=ctoa (strget parameters 0);
 set alarm=ctoa (strget parameters 1);
 set beepbeep=ctoa (strget parameters 2);
 Secho "clock="; Secho clock; Secho " alarm="; Secho alarm; Secho " beepbeep="; Secho beepbeep;
+
 */
+//              012345.789.1-3  
+//t parameters="110011-000-0-1";
+//              !!!!!! !!! ! !____ msg on connect 
+//              !!!!!! !!! !____ Qos SUBSCRIBE
+//              !!!!!! !!!____ dup PUBLISH
+//              !!!!!! !!____ QoS PUBLISH
+//              !!!!!! !____ retain PUBLISH     
+//              !!!!!!____________________ clean CONNECT
+//              !!!!!_____________ will flag CONNECT
+//              !!!!___________ will QoS CONNECT
+//              !!!_________ will retain CONNECT
+//              !!_______ password CONNECT
+//              !____ user CONNECT
+
+
+let 0->f in (
+ set byte=0;
+ set f= atoi ctoa (strget parameters 0);
+ set byte = byte | (f<<7);
+ set f= atoi ctoa (strget parameters 1);
+ set byte = byte | (f<<6);
+ set f= atoi ctoa (strget parameters 2);
+ set byte = byte | (f<<5);
+ set f= atoi ctoa (strget parameters 3);
+ set byte = byte | (f<<3);
+ set f= atoi ctoa (strget parameters 4);
+ set byte = byte | (f<<2);
+ set f= atoi ctoa (strget parameters 5);
+ set byte = byte | (f<<1);
+
+ // byte publish
+ set byte_publish=MQTT_TYPE_PUBLISH;//0x30
+ set f= atoi ctoa (strget parameters 7);
+ set byte_publish = byte_publish | (f<<3);
+ set f= atoi ctoa (strget parameters 8);
+ set byte_publish = byte_publish | (f<<1);
+ set f= atoi ctoa (strget parameters 9);
+ set byte_publish = byte_publish | f;
+
+ // byte_subscribe
+ set byte_subscribe=0;
+ set f= atoi ctoa (strget parameters 11);
+ set byte_subscribe = byte_subscribe | f;
+
+ // msg on connect
+ set mqtt_conn_flag=0;
+ set f= atoi ctoa (strget parameters 13);
+ set mqtt_conn_flag = f;
+
+
+0);
+Secho "byte="; Secholn ctoh byte;
+Secho "byte_publish="; Secholn ctoh byte_publish;
+Secho "byte_subscribe="; Secholn ctoh byte_subscribe;
+Secho "mqtt_conn_flag="; Secholn ctoh mqtt_conn_flag;
+//set byte = (user << 7) | (password << 6) | (willr << 5) | (willqos << 3) | (willf << 2) | (clean <<1);
+
+
+/*
+//6
+set dup= atoi ctoa (strget parameters 7);
+set qos= atoi ctoa (strget parameters 8);
+set retain= atoi ctoa (strget parameters 9);
+*/
+
+
 			set clock_msg=listswitchstr conf "clock_msg";
 			set alarm_msg=listswitchstr conf "alarm_msg";
 			if (time_clock!=nil) then
@@ -4901,6 +5114,17 @@ Secho "clock="; Secho clock; Secho " alarm="; Secho alarm; Secho " beepbeep="; S
 			   set tmz="0";
 			if (tms==nil) then
 			   set tms="+";
+
+
+			if (mqtt_conn_topic==nil) then
+			     set mqtt_conn_topic="/info";
+			if (mqtt_conn_msg==nil) then
+			     set mqtt_conn_msg="ONLINE";
+			if (mqtt_will_topic==nil) then
+			     set mqtt_will_topic="/info";
+			if (mqtt_will_msg==nil) then
+			     set mqtt_will_msg="OFFLINE";
+
 
 
             //			  
