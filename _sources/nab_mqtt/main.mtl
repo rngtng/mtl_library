@@ -34,7 +34,10 @@
 //var Days;;
 //var LeapYears;;
 //var CurrentYear;;
+var LCD=0;; // 1 
+var NFW=0;; // 1 new firmware
 
+var cfglocal;;
 var conn_count=0;;
 var conn_state=0;;
 var byte;;
@@ -43,6 +46,8 @@ var byte_subscribe;;
 
 var gg={ 0 31  28  31  30 31  30  31  31  30  31  30  31};;
 var secondi_u;;
+var dayweek;;
+
 var CurrentYear;;
 var CurrentMonth;;
 var CurrentDate;;   
@@ -108,6 +113,9 @@ var asp2=0;;
 var asp3=0;;
 var month;;//month name parameters
 var monthname;;//month name table
+var days;;//days name parameters
+var daysname;;//days name table
+
 
 var rss1;;
 var rss1title;;
@@ -773,6 +781,138 @@ fun XmppTcpSend xSession Data =
 #include ntp.mtl
 // NTP -- end
 
+
+
+var rs=0;;
+var devi2c = 0x7e;;//   -- I2C Address
+var reg = 0x00;;//   -- write
+//var value;;//i2c.setup(id, sda, scl, i2c.SLOW)
+var bl = 0x08;;//      -- 0x08 = back light on
+var risu="";;
+
+fun LCDsend1 data=
+ let tabnew nil (tablen data)*2->value in
+  let 0->ii in (
+   //set value=tabnew nil (tablen data)*2;
+   for i=0; i < tablen data; i+1 do (
+     set value.ii=(data.i) + bl + 0x04 + rs;
+     set value.(ii+1)=data.(i) + bl + rs;
+     set ii=ii+2
+   );
+   set risu="\$00";//strcat (ctoa dev) (ctoa reg);
+   for i=0;i<tablen value; i+1 do
+     set risu=strcat risu ( ctoa value.i);
+   dump risu;
+   i2cWrite devi2c risu (strlen risu);
+0);
+0;;
+
+fun LCDsend2 data=
+ set risu="\$00";
+ let tabnew nil (tablen data)*2->value in
+   for i=0; i < tablen data; i+1 do (
+     set risu=strcat risu ( ctoa (data.i + bl + 0x04 + rs));
+     set risu=strcat risu ( ctoa (data.i + bl + rs)) );
+
+   dump risu;
+  Iecholn  i2cWrite devi2c risu (strlen risu) ;
+ 
+nil;;
+fun LCDsend asd  =
+ set risu="\$00";
+ 
+   for i=0; i < (tablen asd) ; i+1 do (
+     set risu=strcat risu ( ctoa (asd.i + bl + 0x04 + rs));
+     set risu=strcat risu ( ctoa (asd.i + bl + rs)) );
+
+   dump risu;
+  Iecholn  i2cWrite devi2c risu (strlen risu) ;
+ 
+nil;;
+
+fun LCDprint str line col=
+//if (type(str) =="number") then
+// str = tostring(str)
+//end
+set rs = 0;
+//--move cursor
+if (line == 2) then
+ LCDsend({0xc0 (col << 4)})
+else if (line==1) then 
+ LCDsend({0x80 (col <<4)});
+
+set rs = 1;
+for i = 0; i< strlen str; i+1 do (
+ let strget  str i -> char in
+ let char & 0xf0 -> hb in
+ let char & 0x0f -> lb in
+   LCDsend ( { hb (lb  <<4)} );
+0);
+nil;;
+fun aspetta x=
+let time_ms->a in
+while (a+x) > time_ms do
+ Secho "Z";
+Secho "aspetta";
+0;;
+fun ii2 a b=
+  call  #i2cWrite  [0x7e a b] ;
+0;;
+fun ii3=
+  call #i2cWrite  [0x7e "\$00\$3c\$38" 3];
+0;;
+
+fun LCDinit =
+set rs = 0;
+let {0x30}-> a in
+ LCDsend a;
+//aspetta 5;
+// tmr.delay(4100);
+let {0x30}-> a in
+ LCDsend a;
+
+// tmr.delay(100);
+//aspetta 1;
+let {0x30}-> a in
+ LCDsend a;
+let {0x20 0x20 0x80}-> a in
+ LCDsend a;
+ LCDsend {0x00 0x10};//            -- display clear
+ LCDsend {0x00 0xc0};//            -- display on
+0;;
+
+fun  LCDcursor op=
+ let rs->oldrs in (
+ set rs=0;
+ if (op == 1) then 
+   LCDsend {0x00 0xe0} //            -- cursor on
+  else 
+   LCDsend {0x00 0xc0};//            -- cursor off
+ 
+ set rs=oldrs
+ );
+0;;
+
+fun LCDcls =
+ let rs->oldrs in (
+ set rs=0;
+ LCDsend {0x00 0x10};
+ set rs=oldrs
+ )
+;;
+
+fun LCDhome =
+ let rs->oldrs in (
+ set rs=0;
+ LCDsend {0x00 0x20};
+  set rs=oldrs
+ )
+;;
+
+
+//
+
+
 var bytelow;;
 var bytehigh;;
 fun lentobyte aaa=
@@ -893,6 +1033,10 @@ fun mqtt_publish_fun session t dato=
       XmppGateSend session mqttPublish
      );
 	 nil);
+/*
+LCDcls;
+LCDprint dato 1 0;
+*/
 0;;
 fun toascii s=
  let ""->stmp in (
@@ -984,7 +1128,13 @@ fun set_time s x=
      let (atoi hour)*3600+(atoi min)*60+(atoi sec) -> x in 
 x;;
 
-
+fun dayweekf =
+set dayweek =dayweek+1;
+if dayweek>6 then set dayweek=0
+;;
+  /* set dayweek=(dayweek+1);
+   set dayweek=((dayweek>>3)| dayweek) & 0x07 ;;
+*/
 fun countTag x t=
   let 0->i in (
   let 0->z in
@@ -1000,6 +1150,8 @@ i);;
 fun cbnetntp msg mac ipfrom= 
    Secholn "CC NTP RECEIVE";
    dump msg; 
+
+ 
 
 set d1=  itoa (strget msg 40);//"dc"
 set d2=  itoa (strget msg 41);//""
@@ -1028,7 +1180,7 @@ else
  set seconds =sottrae totale tz ; 
 
 Secholn seconds;
-
+set dayweek=1;
 set CurrentYear=0;
 let 0->bisestile in
  let seconds->secTmp in
@@ -1037,13 +1189,15 @@ let 0->bisestile in
 // set bisestile= a% 4;set a=a+1;
    set bisestile= (1900 + CurrentYear)% 4;
    if CurrentYear==0 then set bisestile=99;//1900
-   if (bisestile==0) then 
+   if (bisestile==0) then (
     set secTmp = sottrae secTmp "86400";
+    dayweekf);
    set secTmp = sottrae secTmp "31536000";
 //   Secho "secondi_u:"; Secho secondi_u;
 //   Secho " anno:"; Iecho (1900 + CurrentYear); Secho " anni:"; Iecho CurrentYear;Secho " bisestile:"; Iecholn bisestile;
-   if secTmp!=nil then
+   if secTmp!=nil then (
     set CurrentYear=CurrentYear+1;
+    dayweekf);
  0);
 
 //Secho " -secondi_u:"; Secho secondi_u;
@@ -1058,6 +1212,8 @@ let 0->bisestile in
  set CurrentDate=0;
  set CurrentMonth=0;
  set CurrentYear = 1900 + CurrentYear;
+//set dayweek=dayweek + dd%7 ;
+set dayweek=dayweek + (dd-1)%7 ;/*cc*/
 
  while (dd>0) do (
   set CurrentDate=dd;
@@ -1065,8 +1221,15 @@ let 0->bisestile in
 // Secho " giorni rimasti "; Iecho dd; Secho " CurrentMonth "; Iecholn CurrentMonth;
  set CurrentMonth=CurrentMonth +1;
  0);
+//set dayweek=dayweek & 0x07;
+if dayweek>6 then set dayweek=0;
+//set dayweek=day_u & 0x7; /*cc*/
+
 0);
 //Secho " oggii "; Iecho CurrentDate; Secho " CurrentMonth "; Iecholn CurrentMonth;
+
+
+
 
 set SS=atoi secondi_u;
 
@@ -1173,8 +1336,8 @@ Secho ":"; Iecho MM;
 Secho ":"; Iecholn SS;
 Secho " Date: dd-mm-yyyy "; Iecho CurrentDate;
 Secho "-"; Iecho CurrentMonth;
-Secho "-"; Iecholn CurrentYear;
-
+Secho "-"; Iecho CurrentYear;
+Secho "-"; Secholn daysname.dayweek;
 
 /*
 let 0xdc -> n1 in
@@ -1200,6 +1363,7 @@ if(!strcmp beepbeep "1") then
 */
 // +1 day
 fun gginc=
+ dayweekf;
  if (CurrentYear%4==0) then
    set gg.2=29
  else
@@ -1215,6 +1379,25 @@ fun gginc=
  );
 0;;	
 
+/* */
+fun E1fun =
+let strcatlist "\$00"::"CARLO"::nil->a in
+  i2cWrite 0xa2 a (strlen a);
+Secholn "e1fun 1";
+let strcatlist "\$03"::"Z"::nil->a in
+  i2cWrite 0xa2 a (strlen a);
+Secholn "e1fun 2";
+0;;
+
+fun E2fun =    
+let strcatlist "\$00"::nil->a in
+  i2cWrite 0xa2 a (strlen a);
+let i2cRead 0xa2 5-> z in
+ dump z;
+0;;
+
+
+//LCD
 
 
 fun checktime sec=
@@ -1568,6 +1751,116 @@ let bytetolen msg -> lenMsg in
 TEST
 
 */
+		if !strcmp (strsub cmd_msg 0 3) "ER=" then (
+		 Secholn "TYPE Eprom legge 5 byte dall address ER;";
+		 let extract_s cmd_msg "ER=" -> sx in
+		  (
+                  let  htoi (strsub sx 0 2)->a1 in
+                   let i2cRead a1 5-> z in
+                    dump z;
+		  0); 
+                0);
+		if !strcmp (strsub cmd_msg 0 3) "E0=" then (
+		 Secholn "TYPE Eprom scrive 0000 all indirizzo E0;";
+		 let extract_s cmd_msg "E0=" -> sx in
+		  (
+                  let  htoi (strsub sx 0 2)->a1 in
+                   let strcatlist "\$00\$00"::nil->a in
+                      i2cWrite a1 a (strlen a);
+		  0); 
+                0);
+
+
+if !strcmp (strsub cmd_msg 0 6) "EPROMR" then (
+  Secholn "Read eprom from a2..";
+let i2cRead 0xa2 32-> z in
+ dump z;
+0);
+if !strcmp (strsub cmd_msg 0 6) "EPROMS" then (
+  Secholn "Read eprom from aa..";
+let i2cRead 0xaa 32-> z in
+ dump z;
+0);
+if !strcmp (strsub cmd_msg 0 3) "LCD" then (
+  Secholn "LCD test";
+  Secholn "LCDinit 0";LCDinit;
+  Secholn "LCDcls 1";LCDcls;
+  Secholn "LCDhome 2";LCDhome;
+  Secholn "LCDcursor 3";LCDcursor 1;
+  Secholn "LCDprint 4";LCDprint "Hello world" 1 0;
+
+0);
+if !strcmp (strsub cmd_msg 0 6) "EPROMW" then (
+//ii3;
+//ii2 "\$00\$3c\$38" 3;
+//Secho "invio1";
+//ii3;
+//ii2 "\$00\$3c\$38" 3;
+//Secho "invio2";
+/*
+let 0x7E -> indirizzo in (
+let "\$00"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "uno";
+aspetta 1000;
+let "\$00\$3c\$38"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "due";
+aspetta 1000;
+let "\$00\$3c\$38"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "due";
+let "\$00\$3c\$38"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "due";
+ 
+let "\$00\44\40\44\40\140\136"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "due";
+
+let "\$00\12\8\28\24"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "due";
+
+let "\$00\12\8\204\200"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "due";
+
+//////////////
+
+
+let "\$00\140\136\12\8"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "C";
+let "\$00\77\73\61\57"->a in
+  i2cWrite indirizzo a (strlen a);
+Secho "C";
+ 
+0);*/
+
+ /*
+  Secholn "Write eprom from 0";LCDinit;
+  Secholn "Write eprom from 1";LCDcls;
+  Secholn "Write eprom from 2";LCDhome;
+  Secholn "Write eprom from 3";LCDcursor 1;
+  Secholn "Write eprom from 4";LCDprint "CIAO" 1 0;
+*/
+/*
+  //i2cWrite 0x50 "\$00" 1;
+   i2cWrite 0x50 "\$00\$00" 2;
+  //let strcatlist "\$00\$00"::"carlo"::nil->w in
+   let strcatlist "carlo"::nil->w in
+     i2cWrite 0x50 w (strlen w);
+   */
+
+let strcatlist "\$00\$00"::"CARLO"::nil->a in
+  i2cWrite 0xa2 a (strlen a);
+let strcatlist "\$00\$03"::"Z"::nil->a in
+  i2cWrite 0xa2 a (strlen a);
+
+
+0);
+
 if !strcmp (strsub cmd_msg 0 5) "DEBUG" then (
   Secholn "DEBUG";
   let strcatlist "conn_count="::(itoa conn_count)::" conn_state="::(itoa conn_state)::" alarm="::(itoa alarm_time)::" timebase="::(itoa time_base)::" sleep="::(itoa sleep_time)::" wakeup="::(itoa wakeup_time)::" daylife="::(itoa day_life)::nil -> dato in
@@ -1614,7 +1907,7 @@ if !strcmp (strsub cmd_msg 0 5) "CRASH" then (
 		);
 		if !strcmp (strsub cmd_msg 0 5) "DATE?" then (
 		  Secholn "TYPE DATE?";
-                  let strcatlist "MSG="::(itoa CurrentDate)::"+"::monthname.CurrentMonth::"+"::(itoa CurrentYear)::nil -> dato in
+                  let strcatlist "MSG="::daysname.dayweek::"+"::(itoa CurrentDate)::"+"::monthname.CurrentMonth::"+"::(itoa CurrentYear)::nil -> dato in
                      mqtt_publish_fun XmppGlobalSession mqtt_topic dato );                  
 
 
@@ -2517,12 +2810,14 @@ fun XmppGateStreamClosed xSession Mode =
 //let [pParent:xSession pMode:pTcp pStatus:pOpening pTry:3 pTcpV:nil pBoshV:nil pActualMode:nil] -> newGate in	// On crée la structure XmppGate
 //  set xSession.sGate = newGate;	
 //	set xSession.sGate = nil;
-    	XmppGateReconnect xSession 0;  
-0;;
-/*	Xw "gate stream closed, rebooting";
+/*    	XmppGateReconnect xSession 0;  
+0;;*/
+	Xw "gate stream closed, rebooting";
 	reboot 0x0407FE58 0x13fb6754
 ;;
-*/
+
+
+
 // SEND SOMETHING IN TCP OR BOSH
 fun XmppGateSend xSession xData =
 	Xw strcatlist "Sending : "::xData::"(end)"::nil;
@@ -4914,11 +5209,36 @@ fun dump_prgm l=
 
 		
 fun _configcbhttp http res=
+let nil ->conf in
 	if (nil != res) then
 	(
 		Secholn "config=";
-		let filterconfig Secholn httpgetcontent res 0-> conf in
+
+          if (cfglocal)  then
+//          if (!strcmp cfglocal "1")  then
+         set conf=filterconfig Secholn res 0
+         else
+          set conf= filterconfig Secholn httpgetcontent res 0;
+         
+		let ""->zzz in
+
+
+		//let filterconfig Secholn httpgetcontent res 0-> conf in
 		(
+/*
+LCDinit;
+LCDcls;
+LCDhome;
+LCDcursor 1;
+LCDprint "CIAO" 1 0;
+*/
+if LCD then (
+  Secholn "LCDinit 0";LCDinit;
+  Secholn "LCDcls 1";LCDcls;
+  Secholn "LCDhome 2";LCDhome;
+  Secholn "LCDcursor 3";LCDcursor 1;
+  LCDprint "Ready!" 1 0;
+nil);
 			// http urls
 			set pingsrv=listswitchstr conf "ping";
 			set broadcasturl=listswitchstr conf "broad";
@@ -4994,6 +5314,17 @@ set monthname=tabnew nil conta month "$";
 set monthname=stringtotab month "$" monthname;
 for i=0;i<tablen monthname do 
   Secholn monthname.i;
+
+
+/* days name array */
+set days=listswitchstr conf "days";
+//set days=strcat "dummy$" days;
+Secho "elementi array "; Iecholn conta days "$";
+set daysname=tabnew nil conta days "$";
+set daysname=stringtotab days "$" daysname;
+for i=0;i<tablen daysname do 
+  Secholn daysname.i;
+
 
 //
 //                        set beepbeep=listswitchstr conf "beep";
@@ -5151,9 +5482,27 @@ set retain= atoi ctoa (strget parameters 9);
 					reboot 0x0407FE58 0x13fb6754;
 					0
 				);
-
-
-
+/*
+let i2cRead 0x50 8->a in
+(
+dump a);
+Secholn "--eeprom--";
+let 0->i in 
+ Iecholn i2cRead 0x50 i;
+let 1->i in 
+ Iecholn i2cRead 0x50 i;
+let 2->i in 
+ Iecholn i2cRead 0x50 i;
+let 3->i in 
+ Iecholn i2cRead 0x50 i;
+let 4->i in 
+ Iecholn i2cRead 0x50 i;
+let 5->i in 
+ Iecholn i2cRead 0x50 i;
+let 6->i in 
+ Iecholn i2cRead 0x50 i;
+Secholn "--eeprom--";
+*/
 //confInit123;//test config
 
 //CC TEST NTP
@@ -5163,8 +5512,10 @@ Secholn "NTP SEND";
 //let "\213\251\52\250" -> ntpserver in
 
 //let "\$d9\$00\$0a\$fa\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0"->trama in
-let "\$1b\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0"->trama in
+//let "\$1b\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0"->trama in
+let "\227\$0\$0\148\$0\$0\$0\$0\$0\$0\$0\$0\76\79\67\76\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0\$0"->trama in
 udpsend netip 123 ntp_srv 123 trama nil;
+Secholn "sending..";
 //***** */
 
 
@@ -5187,8 +5538,18 @@ fun runconfigstart=
 	if netState==RT2501_S_CONNECTED && wavrunning==0 then (
 		set gConfigStart = time_ms;
 		leds_set_state LEDS_STATE_CONFIG_WAIT ;
-		set run=configwaitRun httprequest "GET" Secholn configurl nil #_configcbhttp HTTP_NORMAL
-	);
+//CC
+set cfglocal=confGetLocateYes;
+ Secho "AAAAAAAA";Iecholn cfglocal;
+// if (!strcmp cfglocal "1")   then  //config presente 
+ if (cfglocal)   then  //config presente 
+   _configcbhttp  " " confGetLocate ;
+
+ if (!cfglocal) then  //no config presente 
+//if (strcmp cfglocal "1") then  //no config presente 
+		set run=configwaitRun httprequest "GET" Secholn configurl nil #_configcbhttp HTTP_NORMAL;
+ 
+	0) ;
 	0;;
 
 fun runconfigwait http=
