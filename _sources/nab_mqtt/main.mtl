@@ -39,8 +39,11 @@ var Month;;
 var CurrentMonth;;
 var CurrentDate;;   
 
+var fakeev=nil;;
+var button2_=0;;
+
 var stmp;;
-var pacc="\$dc\$44\$1f\$c1";;
+//var pacc="\$dc\$44\$1f\$c1";;
 var d1;;
 var d2;;
 var d3;;
@@ -81,6 +84,10 @@ var asp=0;;
 var asp1=0;;
 var asp2=0;;
 var asp3=0;;
+var rss1;;
+var rss1title;;
+var rss2;;
+var rss2title;;
 var mqtt_user;;
 var mqtt_password;;
 var mqtt_clientID;;
@@ -100,6 +107,14 @@ var r1_msg;;
 var tts_url;;
 var stmp;;
 var nudda;;
+
+var ptrrss;;
+
+var ST = "<title>";;
+var ET="</title>";;
+var SD = "<![CDATA[";;
+var ED="]]>";;
+
 
 //const MQTTCONNECT = 
 const MQTT_CONNACK = "\$20\$02\$00\$00";;
@@ -127,9 +142,9 @@ proto getRunState 0;;
 proto endSleep 0;;
 proto setTaichi 0;;
 proto controlsound 1;;
-proto fakebutton 0;;
-
-
+proto fakebutton 1;;
+//proto wavstarthttp 2;;
+proto carlo 1;;
 const midi_plip=
 "\$4d\$54\$68\$64\$00\$00\$00\$06\$00\$00\$00\$01\$01\$e0\$4d\$54\
 \$72\$6b\$00\$00\$00\$2a\$00\$ff\$03\$07\$31\$6e\$6f\$74\$65\$41\
@@ -371,6 +386,7 @@ proto boshurl 1;;
 proto earInit 0;;
 proto sendmailxmppurl 2;;
 proto earGo 3;;//CC
+proto printev 0;;
 //proto getmidilist 0;;//CC
 //proto wavstartlocal 1;;//CC
 proto	earsGoToRefPos 0;;//CC
@@ -588,7 +604,9 @@ fun XmppTcpOpen ip port xSession =
 	)
 	else(	// on est a la fin des entrees srv et on a pas reussi a se connecter -> on essaie le domaine xmpp tout court, et si ca ne fonctionne pas on retombera en BOSH
 		Xw ( strcatlist "No more SRV answears. let's try to connect directly to " :: xSession.sDomain :: nil );
-		dnsreq xSession.sDomain fixarg2 fixarg3 #XmppTcpOpen xSession XmppServerPort;
+//CC
+XmppTcpOpen xSession.sDomain XmppServerPort xSession;
+//		dnsreq xSession.sDomain fixarg2 fixarg3 #XmppTcpOpen xSession XmppServerPort;
 		0)
 	;;
 
@@ -719,6 +737,44 @@ fun XmppTcpSend xSession Data =
 #include ntp.mtl
 // NTP -- end
 
+var bytelow;;
+var bytehigh;;
+fun lentobyte aaa=
+ let aaa->aa in (
+set bytelow=0;
+set bytehigh=0;
+let 0->e in
+let 0->i in
+ while aa>0 do (
+  set e= aa - (aa/128)*128 ;
+  set aa=abs aa/128;
+    if aa>0 then 
+      set e=e| 128;
+      if i==0 then set bytelow=e;
+      if i==1 then set bytehigh=e;
+      set i=i+1;
+	0);
+0);
+aaa;;
+
+var inc;;
+
+fun bytetolen mex=
+  set inc=0; //da mettere globale****************
+  if ((strget mex 1) & 128 !=0) then (
+     set inc=1;
+     let 1->multiplier in
+     let 0->value in (
+      set value = value + ((strget mex 1) & 127) * multiplier;
+      set multiplier = multiplier*128;
+
+      set value = value + ((strget mex 2) & 127) * multiplier;
+      set multiplier = multiplier*128;
+	 
+	value)
+)	else (strget mex 1)
+;;	
+
 
 
 fun mqtt_subscribe_fun session t=
@@ -737,13 +793,24 @@ fun mqtt_publish_fun session t dato=
  Secholn "PUBLISH TO MQTT";
  let strlen t -> mqtt_topiclen in
   let strlen dato -> datolen in
-   let (2+mqtt_topiclen+datolen)->packetlen in
+   let (2+mqtt_topiclen+datolen)->packetlen1 in
+let lentobyte packetlen1->packetlen in
+if packetlen>=128 then (
+    let strcatlist "\$30"::(ctoa bytelow)::(ctoa bytehigh)::"\$00"::(ctoa mqtt_topiclen)::t::dato::nil -> mqttPublish in
+    (
+      dump mqttPublish;	
+      XmppGateSend session mqttPublish;
+      0
+    ))else (
     let strcatlist "\$30"::(ctoa packetlen)::"\$00"::(ctoa mqtt_topiclen)::t::dato::nil -> mqttPublish in
     (
       dump mqttPublish;	
       XmppGateSend session mqttPublish;
       0
-    );
+    ));
+
+
+
 0;;
 
 fun toascii s=
@@ -763,9 +830,21 @@ var currentChar;;
 var pacc;;
 var inversion_table =  { 1  171  205  183  57  163  197  239  241  27  61  167  41  19  53  223  225  139  173  151  25  131  165  207  209  251  29  135  9  243  21  191  193  107  141  119  249  99  133  175  177  219  253  103  233  211  245  159  161  75  109  87  217  67  101  143  145  187  221  71  201  179  213  127  129  43  77  55  185  35  69  111  113  155  189  39  169  147  181  95  97 11  45  23  153  3  37  79  81  123  157  7  137  115  149  63  65  235  13  247  121  227  5  47  49  91  125  231  105  83  117  31  33  203  237  215  89  195  229  15  17  59  93  199  73  51  85  255 };;
 
+
+fun messaggio url1=
+ set previousChar = 35;
+  let (strlen url1)+1->size in
+   let size/256->hb in
+    let size - 256*hb ->lb in (
+     set pacc= strcat "7F0A00" ctoh hb  ;
+     set pacc= strcat pacc ctoh lb  
+   );
+ //set pacc= strcat "7F0A0000" ctoh ((strlen url1)+1)  ;
+/*
 fun messaggio url1=
  set previousChar = 35;
  set pacc= strcat "7F0A0000" ctoh ((strlen url1)+1)  ;
+*/
  set pacc = strcat  pacc "00" ;
  for iy=0;iy<(strlen url1) do (
   set currentChar = strget url1 iy;
@@ -811,6 +890,18 @@ fun set_time s x=
      let (atoi hour)*3600+(atoi min)*60+(atoi sec) -> x in 
 x;;
 
+
+fun countTag x t=
+  let 0->i in (
+  let 0->z in
+  let 0->pos in
+  while (z!=nil) do 
+  ( 
+   set z = strstr x t pos;
+   if z!=nil then set i=i+1;
+   set pos=z + strlen t;
+  0);  
+i);;
 
 fun cbnetntp msg mac ipfrom= 
    Secholn "CC NTP RECEIVE";
@@ -1012,6 +1103,97 @@ set day_life= day_life+86400;
 else nil  
 ;;
 
+fun tradata x=
+           let strstr x SD 0 -> cdata_pos in 
+            let cdata_pos + strlen SD -> cdata_close_pos in	
+             let strstr x ED cdata_close_pos -> cdata_idend_pos in		
+              if cdata_idend_pos != nil then	
+               let strsub x cdata_close_pos (cdata_idend_pos-cdata_close_pos)->b in b
+              else x
+;;
+
+fun tratag m tag_start tag_end=
+
+let ""->a in (
+ let strstr m tag_start ptrrss -> tag_pos in 	
+  if tag_pos!=nil then
+   let tag_pos + strlen tag_start -> tag_close_pos in	
+    let strstr m tag_end tag_close_pos -> tag_end_pos in(
+	 if tag_end_pos != nil then	
+	   set a=tradata (strsub m tag_close_pos (tag_end_pos-tag_close_pos)); 
+	 set ptrrss=tag_end_pos+strlen tag_end);
+ a)
+ ;;
+
+
+
+fun _cbrsshttp http res=
+	Secholn "CC TEST RSS"; Secho res;
+	let httpgetcontent res -> ping_trame in (
+          //dump ping_trame;
+
+set ptrrss=0;
+let res->mm in (
+
+let "MSG="->m1 in
+ let countTag mm ST ->n in (
+  for i=0;i<n && i<rss1title do (
+    set m1=strcat m1 (tratag mm ST ET);
+    set m1=strcat m1 "+";
+0);
+Iecholn n;
+let strreplace m1 " " "+" -> val in (
+Secholn val;
+/*
+  set val = strreplace val "\$c3\$ac" "ì";
+  set val = strreplace val "\$c3\$ad" "ì";
+  set val = strreplace val "\$c3\$a0" "à";
+  set val = strreplace val "\$c3\$a1" "à";
+  set val = strreplace val "\$c3\$a8" "è";
+  set val = strreplace val "\$c3\$a9" "é";
+  set val = strreplace val "\$c3\$b2" "ò";
+  set val = strreplace val "\$c3\$b3" "ò";
+  set val = strreplace val "\$c3\$b0" "ù";
+  set val = strreplace val "\$c3\$ba" "ù";
+*/
+  set val = strreplace val "\$c3\$ac" "i";
+  set val = strreplace val "\$c3\$ad" "i";
+  set val = strreplace val "\$c3\$a0" "a";
+  set val = strreplace val "\$c3\$a1" "a";
+  set val = strreplace val "\$c3\$a8" "e";
+  set val = strreplace val "\$c3\$a9" "e";
+  set val = strreplace val "\$c3\$b2" "o";
+  set val = strreplace val "\$c3\$b3" "o";
+  set val = strreplace val "\$c3\$b0" "u";
+  set val = strreplace val "\$c3\$ba" "u";
+
+//  set val = strreplace val "&#8220;" " ";
+ // set val = strreplace val "&#8221;" " ";
+
+Secholn val;
+//carlo val;
+mqtt_publish_fun XmppGlobalSession mqtt_topic val;
+0);
+0);
+
+/*
+let tratag mm ST ET->m1 in	
+let tratag mm ST ET->m2 in	
+let tratag mm ST ET->m3 in
+let strcatlist "MSG="::m1::"+"::m2::nil ->m4 in
+(
+ let strreplace m4 " " "+" -> val in
+mqtt_publish_fun XmppGlobalSession mqtt_topic val;
+0);
+*/
+
+0);
+0);
+
+
+
+		//evalTrame ping_trame;
+	0;;
 fun _cbtesthttp http res=
 	Secholn "CC TEST YRL"; Secho res;
 	let httpgetcontent res -> ping_trame in
@@ -1063,7 +1245,7 @@ fun XmppTcpRead t val msg xSession =
 			(pInStream -> // Now we are in the stream so normal parsing
                 set xSession.sGate.pBuffer = strcatlist xSession.sGate.pBuffer::msg::nil;
 // CC DEBUG
-			    dump msg;
+//			    dump msg;
 //			   
 				//set xSession.sGate.pBuffer = strcatlist xSession.sGate.pBuffer::msg::nil;	// Mise à jour du buffer d'entrée
 				
@@ -1113,14 +1295,15 @@ fun XmppTcpRead t val msg xSession =
 // * CC check response to other
 // ******************************
 
-Secholn "BUFFER NOT EMPTY...";
+Secho "b";//BUFFER NOT EMPTY...";
 //set xSession.sGate.pBuffer="<message from='net.openjabnab.platform@openznab.it/services' to='000e8e2d053f@openznab.it/boot' id='OJaNa-6005'><packet xmlns='violet:packet' format='1.0' ttl='604800'>fwQAAA5////+BAAFAAgACQQO/wsAAAEA/w==</packet></message>";
 // *********
 // * PING
 // *********
 if(!strcmp msg strcatlist MQTT_PINGRESP::nil) then (       //"\$D0\$00"    
-  Secholn "CC response PING";
-  dump xSession.sGate.pBuffer;
+//  Secholn "CC response PING";
+Secho "p";
+//  dump xSession.sGate.pBuffer;
   set xSession.sGate.pBuffer = nil;
 0);
 // *********
@@ -1146,11 +1329,14 @@ if(!strcmp msg strcatlist MQTT_PUBACK::nil) then ( //"\$40\$02\$00\$00"
 // *********
 let strget msg 0 -> tipo_header in ( 
  if (tipo_header==MQTT_TYPE_PUBLISH) then //(       
-  let strget msg 1 -> lenMsg in 
-  let strget msg 3 -> lenTopic in //(
+//  let strget msg 1 -> lenMsg in 
+
+let bytetolen msg -> lenMsg in
+
+  let strget msg 3+inc -> lenTopic in //(
     let lenMsg - lenTopic -> lenDato in //(
-     let strsub msg 3 lenTopic -> topics in //cc
-     let (strsub msg (lenTopic + 4) (lenDato-2) )-> cmd_msg in (
+     let strsub msg 3+inc lenTopic -> topics in //cc
+     let (strsub msg (lenTopic + 4+inc) (lenDato-2) )-> cmd_msg in (
     /// let strstr topics mqtt_topic 0 -> si in	 // topic correct?
         Secholn cmd_msg;
         set nudda=1;
@@ -1176,10 +1362,33 @@ TEST
 
 
 */
+		if !strcmp (strsub cmd_msg 0 10) "RSS1TITLE=" then (
+		 Secholn "TYPE RSS1TITLE=";
+		 let extract_s cmd_msg "RSS1TITLE=" -> dx in
+                   set rss1title=atoi dx;
+                0);
+		if !strcmp (strsub cmd_msg 0 10) "RSS2TITLE=" then (
+		 Secholn "TYPE RSS2TITLE=";
+		 let extract_s cmd_msg "RSS2TITLE=" -> dx in
+                   set rss2title=atoi dx;
+                0);
+		if !strcmp (strsub cmd_msg 0 5) "RSS1;" then (
+		  Secholn "TYPE RSS1;";
+                  httprequest "GET" rss1 nil #_cbrsshttp HTTP_NORMAL ; 
+//                  httprequest "GET" "http://www.ansa.it/sito/notizie/politica/politica_rss.xml" nil #_cbrsshttp HTTP_NORMAL ; 
+		0);
 
-		if !strcmp (strsub cmd_msg 0 5) "TEST;" then (
-		 Secholn "TYPE TEST;";
-                 fakebutton;
+		if !strcmp (strsub cmd_msg 0 5) "RSS2;" then (
+		  Secholn "TYPE RSS2;";
+                  httprequest "GET" rss2 nil #_cbrsshttp HTTP_NORMAL ; 
+//                  httprequest "GET" "http://www.ansa.it/sito/notizie/politica/politica_rss.xml" nil #_cbrsshttp HTTP_NORMAL ; 
+		0);
+
+
+		if !strcmp (strsub cmd_msg 0 5) "TEST=" then (
+		 Secholn "TYPE TEST=";
+		 let extract_s cmd_msg "TEST=" -> dx in
+                 fakebutton atoi dx;
 		0);
 
 		if !strcmp (strsub cmd_msg 0 5) "TIME?" then (
@@ -1262,12 +1471,15 @@ TEST
 		 let StoB64 (toascii "7f0b00000100ff" ) ->str64 in
 		 set xSession.sGate.pBuffer = strcatlist "<message from='net.openjabnab.platform@openznab.it/services' to='000e8e2d053f@openznab.it/boot' id='OJaNa-6005'><packet xmlns='violet:packet' format='1.0' ttl='604800'>"::str64::"</packet></message>"::nil;
 		 set nudda=0;
+//set asp3=nil;
+
 		0);
 		if !strcmp (strsub cmd_msg 0 6) "SLEEP;" then (  
 		 Secholn "TYPE SLEEP;";
 		 let StoB64 (toascii "7f0b00000101ff" ) ->str64 in
 		 set xSession.sGate.pBuffer = strcatlist "<message from='net.openjabnab.platform@openznab.it/services' to='000e8e2d053f@openznab.it/boot' id='OJaNa-6005'><packet xmlns='violet:packet' format='1.0' ttl='604800'>"::str64::"</packet></message>"::nil;
 		 set nudda=0;
+//set asp2=nil;
 		0);
 		if !strcmp (strsub cmd_msg 0 7) "TAICHI=" then (  
 		 Secholn "TYPE TAICHI=";
@@ -1369,12 +1581,22 @@ const RGB_ORANGE = 0xff8000 ;;*/
  * Idle pour le TCP
  * Maintien la connexion
  */
+var faket;;
 fun XmppTcpIdle xSession =
 	// Si la derniere action est inferieur au time out : on maintient la connexion avec l'envoie d'un espace
+// CC emulazione evento registrazione
+  if (fakeev==3) then (
+    set faket=faket+1;
+    set button2_=1;
+    if (faket >100 ) then 
+     (set fakeev=nil;set button2_=0);
+  0);
+///printev;
 	if time - xSession.sLastIOTime > XmppTcpIdleTime then (
-// CC PING
+// CC PING MQTT
+Secho "P";
       let strcatlist MQTT_PINGREQ::nil -> mqttPing in (
-   	     dump mqttPing;
+//   	     dump mqttPing;
 	     XmppGateSend xSession mqttPing 
 	 )
 //		XmppGateSend xSession " "
@@ -1942,32 +2164,37 @@ fun XmppGateSend xSession xData =
 */
 fun XmppGateIdle xSession=
 //Secholn "CC XMPPGATEIDLE";
-if (!strcmp clock "1") then (
-  let (time_base + time) - day_life -> z in
-  if asp!=z then (
-    let checktime z -> now in
-    if now != nil then (
-     set asp=z;
-     if clock_msg!=nil then (
-      let strcat clock_msg (itoa now) -> dato in
-        mqtt_publish_fun XmppGlobalSession mqtt_topic dato
-     ) else (
-//      controlsound cucu; now
-        if now > 12 then set now=now-12;
-          let cucu->allcucu in (
-           for z=1;z<now do
-             set allcucu=strcat allcucu cucu;
-           wavstartlocalEx allcucu::nil 100;      
-	  0);
-     0);
-    nil);
-  0);
-//allarme!!
-  if (!strcmp alarm "1") then (
+    
+//if (!strcmp clock "1") then (
+// azzerare asp
+/*
+if gSleepState==1 then (
+set asp=nil;
+set asp1=nil;
+//set asp2=nil;
+//set asp3=nil;
+0);
+*/
+if asp1>0 then 
+  set asp1 = asp1 -1;
+
+if asp>0 then 
+  set asp = asp -1;
+
+if asp2>0 then 
+  set asp2 = asp2 -1;
+
+if asp3>0 then 
+  set asp3 = asp3 -1;
+
+//alarm!!
+  if (!strcmp alarm "1") && (gSleepState == 0) then (
     let (time_base + time) - day_life -> z in
     if z==alarm_time then (
-      if asp1!=z then (
-       set asp1=z;
+     if asp1==nil || asp1==0 then (
+       set asp1=20;
+     // if asp1!=z then (
+   //    set asp1=z;
        Secholn "midiclock";
        if alarm_msg!=nil then 
           mqtt_publish_fun XmppGlobalSession mqtt_topic alarm_msg
@@ -1981,19 +2208,77 @@ if (!strcmp clock "1") then (
   if(sleep_time!=nil) then
     let (time_base + time) - day_life -> z in
      if z==sleep_time then
-       if asp2!=z then (
-       set asp2=z;
+      if asp2==nil || asp2==0 then (
+       set asp2=20;
+//       if asp2!=z then (
+//       set asp2=z;
        mqtt_publish_fun XmppGlobalSession mqtt_topic "SLEEP;";
        0);
 // wakeup
   if(wakeup_time!=nil) then
     let (time_base + time) - day_life -> z in
      if z==wakeup_time then
-      if asp3!=z then (
-       set asp3=z;
+      if asp3==nil || asp3==0 then (
+       set asp3=20;
+//      if asp3!=z then (
+  //     set asp3=z;
        mqtt_publish_fun XmppGlobalSession mqtt_topic "WAKEUP;";
       0);
-0);
+
+// normal clock
+if (!strcmp clock "1") && (gSleepState == 0) then (
+ let (time_base + time) - day_life -> z in
+  let checktime z -> now in
+   if now != nil then 
+    if asp==nil || asp==0 then (
+     set asp=20;
+     if clock_msg!=nil then (
+      let strcat clock_msg (itoa now) -> dato in
+        mqtt_publish_fun XmppGlobalSession mqtt_topic dato
+     ) else (
+//      controlsound cucu; now
+        if now > 12 then set now=now-12;
+          let cucu->allcucu in (
+           for z=1;z<now do
+             set allcucu=strcat allcucu cucu;
+           wavstartlocalEx allcucu::nil 100;      
+	  0);
+     0);
+     0);
+    nil);
+
+/*
+// normal clock
+  let (time_base + time) - day_life -> z in
+  //if asp!=z then (
+
+if asp1==nil || asp1==0 then (
+//set asp1=100;
+
+    let checktime z -> now in
+    if now != nil then (
+    // set asp=z;
+
+if (!strcmp clock "1") && (gSleepState == 0) then (
+     set asp1=110;
+     if clock_msg!=nil then (
+      let strcat clock_msg (itoa now) -> dato in
+        mqtt_publish_fun XmppGlobalSession mqtt_topic dato
+     ) else (
+//      controlsound cucu; now
+        if now > 12 then set now=now-12;
+          let cucu->allcucu in (
+           for z=1;z<now do
+             set allcucu=strcat allcucu cucu;
+           wavstartlocalEx allcucu::nil 100;      
+	  0);
+     0);
+     0);
+    nil);
+  0);
+*/
+//0);
+
 
 
 
@@ -2747,7 +3032,7 @@ let strcat d2 (itoa rightValue) -> dato in
 fun XmppSessionRequestResource newRes =
 	Xw strcatlist "RequestResource!"::newRes::nil;
 //CC
-Secholn "I DON'T KNOW";
+Secholn "CC RequestResource ignored";
 	/* REQUEST RESOURCE NOW */
 /*CC
 	let XmppGlobalSession -> xSession in
@@ -4137,7 +4422,7 @@ fun controlsound s=
 // ************************
 fun configurl=strcatlist confGetServerUrl::"/"::(webmac netMac)::".jsp"::nil;;
 //fun recordurl mode=strcatlist pingsrv::"/vl/record.jsp?sn="::(webmac netMac)::"&v="::(getBytecodeRevision)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
-fun recordurl mode=strcatlist pingsrv::"/record.jsp?sn="::(webmac netMac)::"&v="::(getBytecodeRevision)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
+fun recordurl mode=strcatlist pingsrv::"/record.php?sn="::(webmac netMac)::"&v="::(getBytecodeRevision)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
 
 fun rfidurl tag=strcatlist pingsrv::"/vl/rfid.jsp?sn="::(webmac netMac)::"&v="::(getBytecodeRevision)::"&h="::(itoa HARDWARE)::"&t="::(webmac tag)::nil;;
 fun interactifurl application = strcatlist pingsrv::"/vl/itmode.jsp?sn="::(webmac netMac)::"&v="::(getBytecodeRevision)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
@@ -4240,6 +4525,15 @@ fun _configcbhttp http res=
 			if (wakeup_clock!=nil) then	
 			  set wakeup_time = set_time wakeup_clock "WAKEUPTIME=";
 
+//rss
+			set rss1=listswitchstr conf "rss1";
+			set rss2=listswitchstr conf "rss2";
+			set rss1title=atoi listswitchstr conf "rss1title";
+			set rss2title=atoi listswitchstr conf "rss2title";
+			if (rss1title==nil) then
+			  set rss1title=1;
+			if (rss2title==nil) then
+			  set rss2title=1;
 
 			if (ntp_server==nil) then
 			  set ntp_server="\213\251\52\250";
@@ -4572,7 +4866,7 @@ const RecordingTime = 8000;; // v18
 
 fun runrecord=
 //	led LED_NOSE if time_ms&1024 then RGB_RED else RGB_BLACK;
-	if !button2 || ((time_ms-recordtimestart)>8000)then
+	if (!button2 && button2_==0) || ((time_ms-recordtimestart)>8000)then
 	(
 		recstop;
 		setleds RGB_BLACK;
@@ -5333,6 +5627,25 @@ fun runWaitCmd i0 =
 		set run=cmdEvalOne i0+1
 	)
 ;;
+
+//CC
+fun carlo val=
+		Secholn "exec SG : Start Google say";
+		//IPecho netdns 0 1;
+		//startdnsclient;
+		set gStreamingState = 1;
+		setleds 0;
+		if !gBusyState then XmppSessionRequestResource "streaming";
+		set gCurAudioCmdIndex=gCurAudioCmdIndex+1;
+		set gCurStreamName= nil;
+		set chorst_pasdedanse=nil;
+//		let strcatlist "http://translate.google.com/translate_tts?ie=UTF-8&tl=fr&q="::val::nil -> music in
+		let strcatlist tts_url::val::nil -> music in
+		wavstarthttp music #_cbWavError;
+		//set run=streamCmdRun i0;
+		0
+;;
+
 
 //********************************************************
 // Executes the i0'th command in the 'gCurrentProgram' program
