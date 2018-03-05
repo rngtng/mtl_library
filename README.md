@@ -76,8 +76,10 @@ Following assertions are available (see bytecode/test/helper.mtl)
 
 See *\_docs* for a collection of language grammar and command description.
 
-## Understanding the Bytecode
+## About mtl (Metal)
 
-The bytecode is written in a custom language by Sylvain Huet. It is referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Check directory `bytecode/_original` which contains a basic overview & documentation as well as a list of (common) commands. A good reference is the original bytecode, included in the directory as well. Major parts got extracted into seperate files, found in `bytecode/lib/` directory and ready to be included in your code.
+MTL/Metal is a custom language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). It is referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Find the Grammar rules here: https://docs.google.com/document/d/1KMg2wSyMKTmsilCpOByi_59uk5dD8XMfGAu20W63kZE/edit?hl=en_US
 
-Grammar: https://docs.google.com/document/d/1KMg2wSyMKTmsilCpOByi_59uk5dD8XMfGAu20W63kZE/edit?hl=en_US
+Metal is used for programming the Nabaztag, where with `bytecode` the program name is referenced. See original sources here: `/_sources/original/`.
+
+
