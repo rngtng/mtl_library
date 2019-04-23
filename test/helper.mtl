@@ -9,6 +9,10 @@ fun test name=
   SLecholn "\n"::name::": "::nil
 ;;
 
+// fun xtest name=
+//   //no op, skip test
+// 0;;
+
 fun ok should=
   SLecholn "  "::should::" is valid"::nil
 ;;
