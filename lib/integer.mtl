@@ -20,3 +20,8 @@ fun StoI3 val=
 fun StoI2 val=
   _StoI val 0 1
 ;;
+
+//?????
+fun CtoI3 s offset=
+  (strget s offset) << 16 + (strget s offset+1) << 8 + strget s offset+2
+;;
